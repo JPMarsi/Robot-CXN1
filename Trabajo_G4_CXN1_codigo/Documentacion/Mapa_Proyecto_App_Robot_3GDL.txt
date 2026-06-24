@@ -1,0 +1,42 @@
+MAPA DEL PROYECTO - APP ROBOT 3 GDL
+Raiz: C:\Users\Juan\OneDrive\Escritorio\Facultad\Robotica Industrial\Robotica\Trabajo_G4_CXN1_codigo
+Generado: 24/06/2026 03:10:42
+
+Flujo activo:
+iniciarRobot3GDL -> Robot3GDLApp -> resolverRutina -> seleccionarSolucion -> solucionesCI -> cinematicaDirecta -> validarLimites -> generarTrayectoriaLSPB -> validarTrayectoria -> graficos/animacion
+
+Archivos y responsabilidades:
+- iniciarRobot3GDL.m: Entrada unica. Instancia Robot3GDLApp.
+- Robot3GDLApp.m: Clase UI, callbacks, tablas, graficos, animacion y STL.
+- +robot3gdl/parametrosRobot.m: Parametros del robot, limites, tiempos, tolerancias y STL.
+- +robot3gdl/resolverRutina.m: Normalizacion de tabla, CI punto a punto, validacion y trayectoria.
+- +robot3gdl/seleccionarSolucion.m: Seleccion manual/automatica de rama de CI.
+- +robot3gdl/solucionesCI.m: Cinematica inversa y filtros de alcance, limites y error.
+- +robot3gdl/cinematicaDirecta.m: CD base-hombro-codo-extremo.
+- +robot3gdl/generarTrayectoriaLSPB.m: Densificacion articular, LSPB, tiempos y validacion.
+- +robot3gdl/resolverRecorridoArticular.m: Recorrido angular admisible dentro de limites.
+- +robot3gdl/validarLimites.m: Chequeo qMin/qMax.
+- +robot3gdl/validarTrayectoria.m: Chequeo integral de t, Q, dQ, ddQ.
+- +robot3gdl/transformacionesRobot.m: Transformaciones jerarquicas para STL.
+- +robot3gdl/cargarModeloSTL.m: Carga STL y valida triangulacion.
+- +robot3gdl/construirTransformacionSTL.m: Transformacion local escala/rotacion/traslacion.
+- +robot3gdl/crearPrismaEslabon.m: Geometria provisional rectangular.
+- +robot3gdl/rutinaEjemplo.m: Rutina de demostracion validada.
+- +robot3gdl/resumenPruebas.m: Metricas numericas sobre resultado.
+- tests/ejecutarPruebas.m: Suite de pruebas numericas basicas.
+- Aparte/Primer modelado: Implementacion anterior no llamada por la app activa.
+- Aparte/Modelos: Scripts de volumen de trabajo y singularidades.
+- modelos_stl/LEEME_STL.txt: Instrucciones para modelos STL activos.
+- STL/*.stl: Modelos STL existentes con nombres no configurados por defecto.
+
+Parametros principales:
+L1=492 mm, L2=365 mm, L3=310 mm
+qMin=[-170 -80 -130] deg, qMax=[170 120 130] deg
+aMax=100 deg/s^2, vMax=[100 100 100] deg/s
+tfNominal=2.0 s, tMuestreo=0.02 s, tMuerto=0.2 s
+tol=1e-8, tolTiempo=1e-9, tolVelocidad=1e-7, tolReconstruccion=1e-5
+
+Limitaciones registradas:
+- MATLAB detectado: 24.1.0.2537033 (R2024a). Suite tests/ejecutarPruebas: 6 superadas, 0 fallidas.
+- Robot3GDL_App.mlapp no fue inspeccionado internamente.
+- PDF/DOCX/FIG/JPG complementarios no intervienen en el flujo activo.

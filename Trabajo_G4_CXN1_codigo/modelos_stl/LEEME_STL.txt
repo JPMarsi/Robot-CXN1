@@ -1,0 +1,7 @@
+1. Exportar cada componente desde Fusion como STL independiente.
+2. Utilizar milimetros como unidad de referencia.
+3. Copiar los archivos en esta carpeta.
+4. Revisar los nombres configurados en +robot3gdl/parametrosRobot.m.
+5. Abrir la pestana Modelo 3D STL.
+6. Presionar Recargar STL.
+7. Ajustar escala, rotacion y traslacion local si alguna pieza no coincide.

@@ -1,10 +1,30 @@
-function rutina = rutinaEjemplo(robot)
-% RUTINAEJEMPLO Rutina validada que recorre varios cuadrantes y vuelve a Home.
+function rutina = rutinaEjemplo(robot, ejemplo)
+% RUTINAEJEMPLO Devuelve una rutina cartesiana de ejemplo validada.
 
     if nargin < 1
         robot = robot3gdl.parametrosRobot();
     end
+    if nargin < 2 || isempty(ejemplo)
+        ejemplo = 'profesor';
+    end
 
+    ejemplo = lower(strtrim(char(ejemplo)));
+    switch ejemplo
+        case {'profesor', 'profe', 'default'}
+            rutina = rutinaProfesor(robot);
+        case 'estrella'
+            rutina = rutinaEstrella(robot);
+        case {'aleatorio1', 'random1'}
+            rutina = rutinaAleatoria(robot, 11, 'Aleatorio 1');
+        case {'aleatorio2', 'random2'}
+            rutina = rutinaAleatoria(robot, 29, 'Aleatorio 2');
+        otherwise
+            error('Ejemplo desconocido: %s.', ejemplo);
+    end
+end
+
+function rutina = rutinaProfesor(robot)
+% Rutina entregada por el profesor.
     nombres = {
         'Home inicial'
         'Q1 codo arriba'
@@ -26,11 +46,78 @@ function rutina = rutinaEjemplo(robot)
     ];
 
     config = {'arriba'; 'arriba'; 'arriba'; 'abajo'; 'arriba'; 'abajo'; 'arriba'};
+    rutina = construirTabla(nombres, puntos, config);
+    validarRutina(rutina, robot, 'manual');
+end
 
-    for i = 1:size(puntos, 1)
-        robot3gdl.seleccionarSolucion(puntos(i,:), robot, 'manual', [], config{i});
+function rutina = rutinaEstrella(robot)
+% Pentagrama horizontal dentro del espacio alcanzable del robot.
+    radio = 430;
+    zPlano = 600;
+    angulos = [90, 234, 18, 162, 306, 90];
+
+    puntos = zeros(numel(angulos) + 2, 3);
+    nombres = cell(size(puntos, 1), 1);
+    puntos(1,:) = [675, 0, 492];
+    nombres{1} = 'Home inicial';
+
+    for i = 1:numel(angulos)
+        ang = angulos(i);
+        puntos(i+1,:) = [radio*cosd(ang), radio*sind(ang), zPlano];
+        nombres{i+1} = sprintf('Estrella %02d', i);
     end
 
-    rutina = table(nombres, puntos(:,1), puntos(:,2), puntos(:,3), config, ...
+    puntos(end,:) = puntos(1,:);
+    nombres{end} = 'Home final';
+
+    config = repmat({'auto'}, size(puntos, 1), 1);
+    rutina = construirTabla(nombres, puntos, config);
+    validarRutina(rutina, robot, 'auto');
+end
+
+function rutina = rutinaAleatoria(robot, semilla, nombreBase)
+% Rutina pseudoaleatoria reproducible generada desde puntos articulares validos.
+    rng(semilla, 'twister');
+
+    nIntermedios = 6;
+    q = zeros(nIntermedios + 2, 3);
+    q(1,:) = [0, 0, 0];
+    q(end,:) = [0, 0, 0];
+
+    for i = 2:nIntermedios+1
+        q(i,1) = -125 + 250*rand();
+        q(i,2) = -35 + 115*rand();
+        q(i,3) = -95 + 205*rand();
+    end
+
+    puntos = zeros(size(q));
+    for i = 1:size(q, 1)
+        cd = robot3gdl.cinematicaDirecta(q(i,:), robot);
+        puntos(i,:) = cd(end,:);
+    end
+
+    nombres = cell(size(q, 1), 1);
+    nombres{1} = 'Home inicial';
+    for i = 2:nIntermedios+1
+        nombres{i} = sprintf('%s %02d', nombreBase, i-1);
+    end
+    nombres{end} = 'Home final';
+
+    config = repmat({'auto'}, size(puntos, 1), 1);
+    rutina = construirTabla(nombres, puntos, config);
+    validarRutina(rutina, robot, 'auto');
+end
+
+function rutina = construirTabla(nombres, puntos, config)
+    rutina = table(nombres(:), puntos(:,1), puntos(:,2), puntos(:,3), config(:), ...
         'VariableNames', {'Nombre', 'X', 'Y', 'Z', 'Config'});
+end
+
+function validarRutina(rutina, robot, modo)
+    qAnterior = [];
+    for i = 1:height(rutina)
+        P = [rutina.X(i), rutina.Y(i), rutina.Z(i)];
+        [q, ~] = robot3gdl.seleccionarSolucion(P, robot, modo, qAnterior, rutina.Config{i});
+        qAnterior = q;
+    end
 end

@@ -8,9 +8,14 @@ classdef Robot3GDLApp < handle
         AxDDQ
         TabConfig
         TabAnim
+        TabModeloSTL
         TabQ
         TabDQ
         TabDDQ
+        AxesModeloSTL
+        STLStatusLabel
+        STLMostrarEjesCheck
+        STLMostrarReferenciaCheck
         TablaRutina
         TablaResultados
         StatusArea
@@ -25,11 +30,19 @@ classdef Robot3GDLApp < handle
         FieldTMuerto
         FieldRenderStep
         FieldRenderDelay
+        EjemploDropDown
         LimMinFields = cell(1, 3)
         LimMaxFields = cell(1, 3)
         Robot
         Resultado = []
         Anim = struct()
+        ModeloSTLInicializado = false
+        STLModelos = struct()
+        STLTransforms = struct()
+        STLPatches = struct()
+        STLLocalAxes = []
+        STLReferencia = []
+        QActualSTL = [0 0 0]
     end
 
     methods
@@ -53,12 +66,14 @@ classdef Robot3GDLApp < handle
             app.Tabs = uitabgroup(raiz);
             app.TabConfig = uitab(app.Tabs, 'Title', 'Configuracion y rutina');
             app.TabAnim = uitab(app.Tabs, 'Title', 'Animacion 3D');
+            app.TabModeloSTL = uitab(app.Tabs, 'Title', 'Modelo 3D STL');
             app.TabQ = uitab(app.Tabs, 'Title', 'Posicion articular');
             app.TabDQ = uitab(app.Tabs, 'Title', 'Velocidad articular');
             app.TabDDQ = uitab(app.Tabs, 'Title', 'Aceleracion articular');
 
             app.construirTabConfig(app.TabConfig);
             app.construirTabAnim(app.TabAnim);
+            app.construirTabModeloSTL(app.TabModeloSTL);
             app.AxQ = app.crearEjesSeries(app.TabQ, 'Posicion articular', 'q [deg]');
             app.AxDQ = app.crearEjesSeries(app.TabDQ, 'Velocidad articular', 'dq [deg/s]');
             app.AxDDQ = app.crearEjesSeries(app.TabDDQ, 'Aceleracion articular', 'ddq [deg/s^2]');
@@ -96,7 +111,12 @@ classdef Robot3GDLApp < handle
             app.ModoDropDown = uidropdown(pg, 'Items', {'auto', 'manual'}, 'Value', 'auto');
             uilabel(pg, 'Text', '');
 
-            btnEjemplo = uibutton(pg, 'Text', 'Cargar ejemplo', 'ButtonPushedFcn', @(~,~) app.cargarEjemplo());
+            [itemsEjemplo, idsEjemplo] = robot3gdl.listarEjemplos();
+            app.EjemploDropDown = uidropdown(pg, ...
+                'Items', itemsEjemplo, ...
+                'ItemsData', idsEjemplo, ...
+                'Value', idsEjemplo{1}, ...
+                'ValueChangedFcn', @(~,~) app.cargarEjemplo());
             btnAgregar = uibutton(pg, 'Text', 'Agregar punto', 'ButtonPushedFcn', @(~,~) app.agregarPunto());
             btnEliminar = uibutton(pg, 'Text', 'Eliminar ultimo', 'ButtonPushedFcn', @(~,~) app.eliminarPunto());
             btnValidar = uibutton(pg, 'Text', 'Validar', 'ButtonPushedFcn', @(~,~) app.validarRutina());
@@ -146,6 +166,36 @@ classdef Robot3GDLApp < handle
             app.TiempoLabel = uilabel(barra, 'Text', 't = 0.00 s');
         end
 
+        function construirTabModeloSTL(app, parent)
+            layout = uigridlayout(parent, [3 1]);
+            layout.RowHeight = {28, '1x', 28};
+            layout.Padding = [8 8 8 8];
+
+            barra = uigridlayout(layout, [1 6]);
+            barra.ColumnWidth = {110, 130, 160, 190, '1x', 160};
+            uibutton(barra, 'Text', 'Recargar STL', 'ButtonPushedFcn', @(~,~) app.inicializarModeloSTL());
+            uibutton(barra, 'Text', 'Restablecer camara', 'ButtonPushedFcn', @(~,~) app.restablecerCamaraSTL());
+            app.STLMostrarEjesCheck = uicheckbox(barra, 'Text', 'Mostrar ejes locales', 'Value', false, ...
+                'ValueChangedFcn', @(~,~) app.actualizarVisibilidadSTL());
+            app.STLMostrarReferenciaCheck = uicheckbox(barra, 'Text', 'Mostrar alambrico ref.', 'Value', true, ...
+                'ValueChangedFcn', @(~,~) app.actualizarVisibilidadSTL());
+            uilabel(barra, 'Text', '');
+            uilabel(barra, 'Text', 'Convencion STL: +X local');
+
+            app.AxesModeloSTL = uiaxes(layout);
+            axis(app.AxesModeloSTL, 'equal');
+            grid(app.AxesModeloSTL, 'on');
+            view(app.AxesModeloSTL, 3);
+            xlabel(app.AxesModeloSTL, 'X [mm]');
+            ylabel(app.AxesModeloSTL, 'Y [mm]');
+            zlabel(app.AxesModeloSTL, 'Z [mm]');
+            title(app.AxesModeloSTL, 'Robot 3 GDL con modelos STL');
+
+            app.STLStatusLabel = uilabel(layout, 'Text', 'Modelos STL no inicializados.', ...
+                'FontWeight', 'bold');
+            app.inicializarModeloSTL();
+        end
+
         function axesSerie = crearEjesSeries(~, parent, titulo, etiquetaY)
             layout = uigridlayout(parent, [3 1]);
             layout.RowHeight = {'1x', '1x', '1x'};
@@ -171,13 +221,33 @@ classdef Robot3GDLApp < handle
         function cargarEjemplo(app)
             try
                 app.actualizarRobotDesdeUI();
-                rutina = robot3gdl.rutinaEjemplo(app.Robot);
+                ejemplo = 'profesor';
+                if ~isempty(app.EjemploDropDown)
+                    ejemplo = get(app.EjemploDropDown, 'Value');
+                end
+                rutina = robot3gdl.rutinaEjemplo(app.Robot, ejemplo);
                 app.TablaRutina.Data = table2cell(rutina);
                 app.Resultado = [];
                 app.limpiarGraficos();
-                app.log('Rutina de ejemplo cargada y validada.');
+                app.log(sprintf('Rutina de ejemplo cargada: %s.', app.nombreEjemploActual()));
             catch ME
                 app.alerta(ME);
+            end
+        end
+
+        function nombre = nombreEjemploActual(app)
+            if isempty(app.EjemploDropDown)
+                nombre = 'Profesor';
+                return;
+            end
+            items = get(app.EjemploDropDown, 'Items');
+            ids = get(app.EjemploDropDown, 'ItemsData');
+            valor = get(app.EjemploDropDown, 'Value');
+            idx = find(strcmp(ids, valor), 1, 'first');
+            if isempty(idx)
+                nombre = char(valor);
+            else
+                nombre = items{idx};
             end
         end
 
@@ -204,6 +274,7 @@ classdef Robot3GDLApp < handle
 
         function validarRutina(app)
             try
+                app.Resultado = [];
                 app.actualizarRobotDesdeUI();
                 resultado = robot3gdl.resolverRutina(app.TablaRutina.Data, app.Robot, get(app.ModoDropDown, 'Value'));
                 app.Resultado = resultado;
@@ -290,25 +361,245 @@ classdef Robot3GDLApp < handle
 
         function graficarSeries(app)
             tray = app.Resultado.trayectoria;
-            app.plotSeriesSeparadas(app.AxQ, tray.t, tray.Q, tray.tPuntos, tray.Qpuntos, 'q [deg]', 'Posicion');
-            app.plotSeriesSeparadas(app.AxDQ, tray.t, tray.dQ, tray.tPuntos, zeros(size(tray.Qpuntos)), 'dq [deg/s]', 'Velocidad');
-            app.plotSeriesSeparadas(app.AxDDQ, tray.t, tray.ddQ, tray.tPuntos, zeros(size(tray.Qpuntos)), 'ddq [deg/s^2]', 'Aceleracion');
+            [tMarcadores, qMarcadores] = app.marcadoresTrayectoria(tray);
+            app.plotSeriesSeparadas(app.AxQ, tray.t, tray.Q, tMarcadores, qMarcadores, 'q [deg]', 'Posicion', 'linea');
+            app.plotSeriesSeparadas(app.AxDQ, tray.t, tray.dQ, tMarcadores, zeros(size(qMarcadores)), 'dq [deg/s]', 'Velocidad', 'linea');
+            app.plotSeriesSeparadas(app.AxDDQ, tray.t, tray.ddQ, tMarcadores, zeros(size(qMarcadores)), 'ddq [deg/s^2]', 'Aceleracion', 'escalon');
         end
 
-        function plotSeriesSeparadas(~, axesSerie, t, Y, tPuntos, Ypuntos, etiqueta, titulo)
+        function [tMarcadores, qMarcadores] = marcadoresTrayectoria(~, tray)
+            if isfield(tray, 'QpuntosOriginal') && isfield(tray, 'tPuntosOriginal')
+                tMarcadores = tray.tPuntosOriginal;
+                qMarcadores = tray.QpuntosOriginal;
+            else
+                tMarcadores = tray.tPuntos;
+                qMarcadores = tray.Qpuntos;
+            end
+        end
+
+        function plotSeriesSeparadas(~, axesSerie, t, Y, tPuntos, Ypuntos, etiqueta, titulo, estilo)
             colores = [0 0.4470 0.7410; 0.8500 0.3250 0.0980; 0.9290 0.6940 0.1250];
             for j = 1:3
                 ax = axesSerie{j};
                 cla(ax);
-                plot(ax, t, Y(:,j), 'Color', colores(j,:), 'LineWidth', 1.3);
+                yDatos = [Y(:,j); Ypuntos(:,j)];
+                yDatos = yDatos(isfinite(yDatos));
+                if isempty(yDatos)
+                    yLimActual = [-1 1];
+                else
+                    yMin = min(yDatos);
+                    yMax = max(yDatos);
+                    margen = max(1, 0.08*max(abs(yMax - yMin), 1));
+                    yLimActual = [yMin - margen, yMax + margen];
+                end
+                xlim(ax, [t(1), t(end)]);
+                ylim(ax, yLimActual);
                 hold(ax, 'on');
+                if strcmp(estilo, 'escalon')
+                    stairs(ax, t, Y(:,j), 'Color', colores(j,:), 'LineWidth', 1.4);
+                else
+                    plot(ax, t, Y(:,j), 'Color', colores(j,:), 'LineWidth', 1.3);
+                end
                 plot(ax, tPuntos, Ypuntos(:,j), 'o', 'Color', colores(j,:), 'MarkerFaceColor', colores(j,:), 'MarkerSize', 4);
-                hold(ax, 'off');
                 grid(ax, 'on');
                 xlabel(ax, 't [s]');
                 ylabel(ax, etiqueta);
                 title(ax, sprintf('%s q%d', titulo, j));
+                hold(ax, 'off');
             end
+        end
+
+        function inicializarModeloSTL(app)
+            try
+                app.ModeloSTLInicializado = false;
+                ax = app.AxesModeloSTL;
+                cla(ax);
+                hold(ax, 'on');
+                axis(ax, 'equal');
+                grid(ax, 'on');
+                view(ax, 3);
+                xlabel(ax, 'X [mm]');
+                ylabel(ax, 'Y [mm]');
+                zlabel(ax, 'Z [mm]');
+                title(ax, 'Robot 3 GDL con modelos STL');
+
+                if ~isfolder(app.Robot.stl.carpeta)
+                    mkdir(app.Robot.stl.carpeta);
+                end
+
+                app.STLTransforms = struct();
+                app.STLPatches = struct();
+                app.STLModelos = struct();
+                app.STLLocalAxes = [];
+                app.STLReferencia = [];
+
+                app.STLTransforms.base = hgtransform('Parent', ax);
+                app.STLTransforms.q1 = hgtransform('Parent', ax);
+                app.STLTransforms.eslabon1 = hgtransform('Parent', app.STLTransforms.q1);
+                app.STLTransforms.q2 = hgtransform('Parent', app.STLTransforms.q1);
+                app.STLTransforms.eslabon2 = hgtransform('Parent', app.STLTransforms.q2);
+                app.STLTransforms.q3 = hgtransform('Parent', app.STLTransforms.q2);
+                app.STLTransforms.eslabon3 = hgtransform('Parent', app.STLTransforms.q3);
+                app.STLTransforms.efector = hgtransform('Parent', app.STLTransforms.q3);
+
+                piezas = {'base', 'eslabon1', 'eslabon2', 'eslabon3', 'efector'};
+                faltantes = {};
+                for i = 1:numel(piezas)
+                    pieza = piezas{i};
+                    ruta = fullfile(app.Robot.stl.carpeta, app.Robot.stl.archivos.(pieza));
+                    opciones.escala = app.Robot.stl.escala.(pieza);
+                    modelo = robot3gdl.cargarModeloSTL(ruta, opciones);
+                    if ~modelo.disponible
+                        faltantes{end+1} = modelo.nombre; %#ok<AGROW>
+                        [modelo.faces, modelo.vertices] = app.geometriaProvisional(pieza);
+                    end
+                    app.STLModelos.(pieza) = modelo;
+                    app.STLPatches.(pieza) = app.crearPatchSTL(pieza, modelo);
+                    app.crearEjesLocales(app.STLPatches.(pieza).Parent);
+                end
+
+                app.STLReferencia = plot3(ax, 0, 0, 0, 'k-', 'LineWidth', 0.8, ...
+                    'HandleVisibility', 'off');
+                app.ModeloSTLInicializado = true;
+                app.actualizarModeloSTL(app.QActualSTL);
+                app.actualizarVisibilidadSTL();
+                app.restablecerCamaraSTL();
+
+                try
+                    camlight(ax, 'headlight');
+                    lighting(ax, 'gouraud');
+                catch
+                end
+
+                if isempty(faltantes)
+                    set(app.STLStatusLabel, 'Text', 'Modelos STL cargados correctamente.');
+                else
+                    set(app.STLStatusLabel, 'Text', ...
+                        sprintf('Modelos STL no encontrados. Geometrias provisionales: %s', strjoin(faltantes, ', ')));
+                    fprintf('Modelo STL: faltan archivos, se usan geometrias provisionales: %s\n', strjoin(faltantes, ', '));
+                end
+                hold(ax, 'off');
+            catch ME
+                app.ModeloSTLInicializado = false;
+                if ~isempty(app.STLStatusLabel) && isvalid(app.STLStatusLabel)
+                    set(app.STLStatusLabel, 'Text', ['Fallo STL: ', ME.message]);
+                end
+                warning('Robot3GDL:STL', 'Fallo inicializando modelo STL: %s', ME.message);
+            end
+        end
+
+        function actualizarModeloSTL(app, q)
+            if ~app.ModeloSTLInicializado || ~isfield(app.STLTransforms, 'q1')
+                return;
+            end
+            if ~isvalid(app.STLTransforms.q1)
+                return;
+            end
+
+            app.QActualSTL = q(:).';
+            T = robot3gdl.transformacionesRobot(app.QActualSTL, app.Robot);
+
+            set(app.STLTransforms.base, 'Matrix', app.matrizLocalSTL('base'));
+            set(app.STLTransforms.q1, 'Matrix', T.q1);
+            set(app.STLTransforms.q2, 'Matrix', T.q2);
+            set(app.STLTransforms.q3, 'Matrix', T.q3);
+            set(app.STLTransforms.eslabon1, 'Matrix', ...
+                makehgtform('yrotate', -pi/2) * app.matrizLocalSTL('eslabon1'));
+            set(app.STLTransforms.eslabon2, 'Matrix', app.matrizLocalSTL('eslabon2'));
+            set(app.STLTransforms.eslabon3, 'Matrix', app.matrizLocalSTL('eslabon3'));
+            set(app.STLTransforms.efector, 'Matrix', T.efector * app.matrizLocalSTL('efector'));
+
+            if ~isempty(app.STLReferencia) && isvalid(app.STLReferencia)
+                puntos = robot3gdl.cinematicaDirecta(app.QActualSTL, app.Robot);
+                set(app.STLReferencia, 'XData', puntos(:,1), 'YData', puntos(:,2), 'ZData', puntos(:,3));
+            end
+        end
+
+        function Tlocal = matrizLocalSTL(app, pieza)
+            Tlocal = robot3gdl.construirTransformacionSTL( ...
+                app.Robot.stl.escala.(pieza), ...
+                app.Robot.stl.rotacionInicial.(pieza), ...
+                app.Robot.stl.traslacionInicial.(pieza)) * ...
+                app.Robot.stl.transformacionLocal.(pieza);
+        end
+
+        function patchObj = crearPatchSTL(app, pieza, modelo)
+            colores.base = [0.35 0.35 0.38];
+            colores.eslabon1 = [0.20 0.45 0.80];
+            colores.eslabon2 = [0.80 0.35 0.20];
+            colores.eslabon3 = [0.90 0.65 0.18];
+            colores.efector = [0.25 0.65 0.35];
+            patchObj = patch( ...
+                'Faces', modelo.faces, ...
+                'Vertices', modelo.vertices, ...
+                'FaceColor', colores.(pieza), ...
+                'EdgeColor', 'none', ...
+                'FaceAlpha', 1, ...
+                'Parent', app.STLTransforms.(pieza), ...
+                'HandleVisibility', 'off');
+        end
+
+        function [faces, vertices] = geometriaProvisional(app, pieza)
+            switch pieza
+                case 'base'
+                    [faces, vertices] = robot3gdl.crearPrismaEslabon(160, 160, 45);
+                    vertices(:,1) = vertices(:,1) - 80;
+                    vertices(:,3) = vertices(:,3) + 22.5;
+                case 'eslabon1'
+                    [faces, vertices] = robot3gdl.crearPrismaEslabon(app.Robot.L1, 45, 45);
+                case 'eslabon2'
+                    [faces, vertices] = robot3gdl.crearPrismaEslabon(app.Robot.L2, 42, 42);
+                case 'eslabon3'
+                    [faces, vertices] = robot3gdl.crearPrismaEslabon(app.Robot.L3, 36, 36);
+                otherwise
+                    [faces, vertices] = robot3gdl.crearPrismaEslabon(80, 28, 28);
+            end
+        end
+
+        function crearEjesLocales(app, parentTransform)
+            L = 70;
+            hx = line('XData', [0 L], 'YData', [0 0], 'ZData', [0 0], 'Color', [0.9 0.1 0.1], ...
+                'LineWidth', 1, 'Parent', parentTransform, 'HandleVisibility', 'off');
+            hy = line('XData', [0 0], 'YData', [0 L], 'ZData', [0 0], 'Color', [0.1 0.7 0.1], ...
+                'LineWidth', 1, 'Parent', parentTransform, 'HandleVisibility', 'off');
+            hz = line('XData', [0 0], 'YData', [0 0], 'ZData', [0 L], 'Color', [0.1 0.2 0.9], ...
+                'LineWidth', 1, 'Parent', parentTransform, 'HandleVisibility', 'off');
+            app.STLLocalAxes = [app.STLLocalAxes; hx; hy; hz];
+        end
+
+        function actualizarVisibilidadSTL(app)
+            if ~isempty(app.STLLocalAxes)
+                validos = isvalid(app.STLLocalAxes);
+                if any(validos)
+                    estado = app.textoVisible(get(app.STLMostrarEjesCheck, 'Value'));
+                    set(app.STLLocalAxes(validos), 'Visible', estado);
+                end
+            end
+            if ~isempty(app.STLReferencia) && isvalid(app.STLReferencia)
+                set(app.STLReferencia, 'Visible', app.textoVisible(get(app.STLMostrarReferenciaCheck, 'Value')));
+            end
+        end
+
+        function estado = textoVisible(~, valor)
+            if valor
+                estado = 'on';
+            else
+                estado = 'off';
+            end
+        end
+
+        function restablecerCamaraSTL(app)
+            if isempty(app.AxesModeloSTL) || ~isvalid(app.AxesModeloSTL)
+                return;
+            end
+            ax = app.AxesModeloSTL;
+            alcance = app.Robot.L2 + app.Robot.L3 + 120;
+            axis(ax, 'equal');
+            grid(ax, 'on');
+            xlim(ax, [-alcance alcance]);
+            ylim(ax, [-alcance alcance]);
+            zlim(ax, [0 app.Robot.L1 + app.Robot.L2 + app.Robot.L3 + 120]);
+            view(ax, 45, 25);
         end
 
         function prepararEscena3D(app, idx)
@@ -346,18 +637,17 @@ classdef Robot3GDLApp < handle
 
         function iniciarAnimacion(app)
             try
-                if isempty(app.Resultado)
-                    app.calcular();
-                end
+                app.validarRutina();
                 if isempty(app.Resultado)
                     return;
                 end
+                app.graficarSeries();
+                app.Anim.indice = 1;
+                app.Anim.frame = 1;
+                app.prepararEscena3D(1);
                 app.Tabs.SelectedTab = app.TabAnim;
                 app.Anim.detener = false;
                 app.Anim.pausado = false;
-                if ~isfield(app.Anim, 'hRobot') || ~isvalid(app.Anim.hRobot)
-                    app.prepararEscena3D(app.Anim.indice);
-                end
                 app.bucleAnimacion();
             catch ME
                 app.alerta(ME);
@@ -365,29 +655,59 @@ classdef Robot3GDLApp < handle
         end
 
         function bucleAnimacion(app)
+            tray = app.Resultado.trayectoria;
             nFrames = size(app.Anim.puntosRobot, 3);
             frame = min(max(app.Anim.frame, 1), nFrames);
-            retardo = max(0, app.valorCampo(app.FieldRenderDelay));
+            retardo = max(0.001, app.valorCampo(app.FieldRenderDelay));
+            indices = app.Anim.renderIndices;
+            tInicioSim = tray.t(indices(frame));
+            reloj = tic;
+            tiempoPausado = 0;
+            pausaTic = [];
+            frameAnterior = 0;
 
             while frame <= nFrames && isvalid(app.Fig) && ~app.Anim.detener
                 if app.Anim.pausado
                     app.Anim.frame = frame;
-                    drawnow limitrate nocallbacks;
+                    if isempty(pausaTic)
+                        pausaTic = tic;
+                    end
+                    drawnow limitrate;
+                    pause(retardo);
                     continue;
                 end
 
-                app.actualizarFrame(frame);
-                app.Anim.frame = frame;
-                app.Anim.indice = app.Anim.renderIndices(frame);
-                drawnow limitrate nocallbacks;
+                if ~isempty(pausaTic)
+                    tiempoPausado = tiempoPausado + toc(pausaTic);
+                    pausaTic = [];
+                end
+
+                tReal = toc(reloj) - tiempoPausado;
+                tObjetivo = min(tInicioSim + tReal, tray.t(end));
+                frame = find(tray.t(indices) <= tObjetivo + app.Robot.tolTiempo, 1, 'last');
+                if isempty(frame)
+                    frame = 1;
+                end
+
+                if frame ~= frameAnterior || frame >= nFrames
+                    app.actualizarFrame(frame);
+                    app.Anim.frame = frame;
+                    app.Anim.indice = indices(frame);
+                    frameAnterior = frame;
+                    drawnow limitrate;
+                end
+
                 if frame >= nFrames
                     break;
                 end
-                frame = frame + 1;
-                if retardo > 0
-                    ticRetardo = tic;
-                    while toc(ticRetardo) < retardo && isvalid(app.Fig) && ~app.Anim.detener
-                        drawnow limitrate nocallbacks;
+
+                tSiguiente = tray.t(indices(frame + 1)) - tInicioSim;
+                espera = tSiguiente - tReal;
+                if espera > 0
+                    ticEspera = tic;
+                    while toc(ticEspera) < espera && isvalid(app.Fig) && ~app.Anim.detener && ~app.Anim.pausado
+                        drawnow limitrate;
+                        pause(min(retardo, max(0.001, espera - toc(ticEspera))));
                     end
                 end
             end
@@ -404,6 +724,9 @@ classdef Robot3GDLApp < handle
             i = app.Anim.renderIndices(frame);
             set(app.TiempoLabel, 'Text', sprintf('t = %.2f / %.2f s | frame %d/%d', tray.t(i), tray.t(end), frame, size(app.Anim.puntosRobot, 3)));
             title(app.Ax3D, sprintf('q = [%.1f, %.1f, %.1f] deg', tray.Q(i,1), tray.Q(i,2), tray.Q(i,3)));
+            if app.ModeloSTLInicializado
+                app.actualizarModeloSTL(tray.Q(i,:));
+            end
         end
 
         function precalcularAnimacion(app)

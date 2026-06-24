@@ -1,5 +1,5 @@
 function [q, detalle] = seleccionarSolucion(P, robot, modo, qAnterior, configManual)
-% SELECCIONARSOLUCION Elige una solucion de CI manual o automaticamente.
+% SELECCIONARSOLUCION Elige una solucion de CI segun Config o costo automatico.
 
     if nargin < 4
         qAnterior = [];
@@ -16,7 +16,7 @@ function [q, detalle] = seleccionarSolucion(P, robot, modo, qAnterior, configMan
     modo = lower(string(modo));
     configManual = lower(string(configManual));
 
-    if modo == "manual" && configManual ~= "auto"
+    if configManual ~= "auto"
         configs = string({soluciones.config});
         idx = find(configs == configManual, 1, 'first');
         if isempty(idx)

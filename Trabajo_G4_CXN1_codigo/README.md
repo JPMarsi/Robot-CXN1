@@ -31,7 +31,11 @@ Con esta definicion, `q3` positivo resta orientacion al tercer eslabon respecto 
 
 ## Trayectorias
 
-La trayectoria usa LSPB por tramos, con velocidad cero al inicio y fin de cada tramo. Si el tiempo nominal no alcanza para respetar la aceleracion maxima, se calcula el tiempo minimo factible y se sincroniza el tramo para las tres articulaciones.
+La trayectoria usa LSPB por tramos, con velocidad cero al inicio y fin de cada tramo. Si el tiempo nominal no alcanza para respetar la aceleracion maxima o la velocidad maxima `robot.vMax`, se calcula el tiempo minimo factible y se sincroniza el tramo para las tres articulaciones.
+
+Antes de generar cada tramo se evalua el recorrido articular admisible. Para q1, un cambio cercano a `+170` hacia `-170` no usa automaticamente el camino angular corto por `+-180`, porque esa zona esta fuera de los limites mecanicos. En ese caso se usa el recorrido continuo dentro de `[-170, 170]`, se aumenta el tiempo si hace falta y se informa en Command Window.
+
+Las velocidades y aceleraciones se calculan analiticamente desde el perfil LSPB; no se derivan con `diff`. Las lineas verticales de referencia de las graficas usan un unico estilo centralizado.
 
 ## Animacion 3D
 
@@ -41,6 +45,14 @@ La pestana de animacion incluye dos controles de fluidez:
 - `Retardo [s]`: tiempo minimo entre cuadros renderizados. Un valor bajo acelera la animacion; un valor alto la hace mas lenta y facil de inspeccionar.
 
 La geometria de la animacion se precalcula al preparar la escena y luego solo se actualizan `XData`, `YData` y `ZData`.
+
+## Modelo 3D STL
+
+La pestana `Modelo 3D STL` prepara la visualizacion con piezas importadas desde Fusion sin reemplazar la animacion alambrica. Si no existen los STL, la app inicia igual y muestra geometrias provisionales.
+
+Los archivos se buscan en `modelos_stl`, con nombres configurados en `+robot3gdl/parametrosRobot.m`. Cada pieza tiene escala, rotacion inicial, traslacion inicial y matriz local configurable. La convencion inicial es que el eje longitudinal del STL apunte en `+X` local y las unidades esten en milimetros.
+
+Al copiar los STL reales en la carpeta, use `Recargar STL` en la pestana sin reiniciar MATLAB.
 
 ## Pruebas
 
